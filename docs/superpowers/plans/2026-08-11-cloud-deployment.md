@@ -15,7 +15,7 @@
 **Files:**
 - Create: `.gitignore`
 
-- [ ] **Step 1: Create the repository-level ignore file**
+- [x] **Step 1: Create the repository-level ignore file**
 
 ```gitignore
 .env
@@ -31,7 +31,7 @@
 *.log
 ```
 
-- [ ] **Step 2: Verify the real backend environment file is ignored**
+- [x] **Step 2: Verify the real backend environment file is ignored**
 
 Run: `git check-ignore -v backend/.env frontend/node_modules frontend/.next`
 
@@ -43,7 +43,7 @@ Expected: all three paths are matched by an ignore rule.
 - Modify: `frontend/tests/homepage.test.mjs`
 - Modify: `frontend/app/page.tsx`
 
-- [ ] **Step 1: Write a failing frontend source-contract assertion**
+- [x] **Step 1: Write a failing frontend source-contract assertion**
 
 Replace the hardcoded-fetch assertion with:
 
@@ -59,13 +59,13 @@ assert.doesNotMatch(
 );
 ```
 
-- [ ] **Step 2: Run the frontend test and verify RED**
+- [x] **Step 2: Run the frontend test and verify RED**
 
 Run: `node --test frontend/tests/homepage.test.mjs`
 
 Expected: FAIL because `page.tsx` still fetches the complete localhost URL.
 
-- [ ] **Step 3: Implement the environment-based API URL**
+- [x] **Step 3: Implement the environment-based API URL**
 
 Add near the existing placeholder constant:
 
@@ -81,7 +81,7 @@ Change the request to:
 const response = await fetch(`${apiBaseUrl}/smart-search`, {
 ```
 
-- [ ] **Step 4: Run the frontend test and verify GREEN**
+- [x] **Step 4: Run the frontend test and verify GREEN**
 
 Run: `node --test frontend/tests/homepage.test.mjs`
 
@@ -93,7 +93,7 @@ Expected: all frontend tests pass.
 - Modify: `backend/tests/test_main.py`
 - Modify: `backend/main.py`
 
-- [ ] **Step 1: Write a failing production-origin test**
+- [x] **Step 1: Write a failing production-origin test**
 
 ```python
 def test_allowed_origins_include_normalized_production_origin(monkeypatch) -> None:
@@ -109,13 +109,13 @@ def test_allowed_origins_include_normalized_production_origin(monkeypatch) -> No
     ]
 ```
 
-- [ ] **Step 2: Run the focused backend test and verify RED**
+- [x] **Step 2: Run the focused backend test and verify RED**
 
-Run: `backend/.venv/Scripts/python.exe -m pytest backend/tests/test_main.py -q`
+Run from `backend`: `.venv/Scripts/python.exe -m pytest tests/test_main.py -q`
 
 Expected: FAIL because `get_allowed_origins` does not exist.
 
-- [ ] **Step 3: Implement the origin builder and use it in middleware**
+- [x] **Step 3: Implement the origin builder and use it in middleware**
 
 Add after `load_dotenv()`:
 
@@ -140,9 +140,9 @@ Change middleware configuration to:
 allow_origins=get_allowed_origins(),
 ```
 
-- [ ] **Step 4: Run the backend tests and verify GREEN**
+- [x] **Step 4: Run the backend tests and verify GREEN**
 
-Run: `backend/.venv/Scripts/python.exe -m pytest backend/tests -q`
+Run from `backend`: `.venv/Scripts/python.exe -m pytest tests -q`
 
 Expected: all backend tests pass.
 
@@ -156,12 +156,14 @@ Expected: all backend tests pass.
 - Modify: `backend/main.py`
 - Include: all existing application source, tests, examples, and design documents
 
-- [ ] **Step 1: Run all local verification**
+- [x] **Step 1: Run all local verification**
 
 Run:
 
 ```powershell
-backend/.venv/Scripts/python.exe -m pytest backend/tests -q
+Push-Location backend
+.venv/Scripts/python.exe -m pytest tests -q
+Pop-Location
 node --test frontend/tests/homepage.test.mjs
 Push-Location frontend
 node node_modules/next/dist/bin/next build
@@ -170,7 +172,7 @@ Pop-Location
 
 Expected: backend tests pass, six frontend tests pass, and Next.js builds `/`.
 
-- [ ] **Step 2: Audit tracked candidates for secrets and generated files**
+- [x] **Step 2: Audit tracked candidates for secrets and generated files**
 
 Run:
 
