@@ -118,3 +118,25 @@ test("the homepage supports deep recommendations and renders the Top 5 details",
   assert.match(source, /recommendation\.evidence/);
   assert.match(source, /href=\{recommendation\.html_url\}/);
 });
+
+test("deep recommendation cards can validate one repository at a time", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /type RuntimeReport =/);
+  assert.match(source, /const \[validations, setValidations\]/);
+  assert.match(source, /async function handleValidateRepository\(fullName: string\)/);
+  assert.match(source, /fetch\(`\$\{apiBaseUrl\}\/validate-repository`/);
+  assert.match(source, /body: JSON\.stringify\(\{ full_name: fullName \}\)/);
+  assert.match(source, /验证可运行性/);
+  assert.match(source, /正在创建隔离环境并验证项目/);
+  assert.match(source, /这个过程可能需要几分钟……/);
+  assert.match(source, /Clone/);
+  assert.match(source, /环境识别/);
+  assert.match(source, /运行入口/);
+  assert.match(source, /依赖安装/);
+  assert.match(source, /Smoke Test/);
+  assert.match(source, /Runtime Score/);
+  assert.match(source, /MAX_VISIBLE_ERRORS = 3/);
+  assert.match(source, /MAX_ERROR_LENGTH = 240/);
+  assert.match(source, /console\.error\("Repository validation failed:"/);
+});

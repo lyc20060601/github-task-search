@@ -14,6 +14,8 @@ from github_client import (
 )
 from query_planner import generate_queries
 from ranking.final_ranking import rank_repositories
+from runtime.validator import validate_repository
+from runtime_report import RuntimeReport
 from task_parser import TaskParserError, parse_task
 
 
@@ -105,9 +107,19 @@ def register_routes(api: FastAPI) -> None:
             "recommendations": recommendations,
         }
 
+    @api.post("/validate-repository", response_model=RuntimeReport)
+    def validate_public_repository(
+        request: ValidateRepositoryRequest,
+    ) -> RuntimeReport:
+        return validate_repository(request.full_name)
+
 
 class SearchRequest(BaseModel):
     query: str
+
+
+class ValidateRepositoryRequest(BaseModel):
+    full_name: str
 
 
 register_routes(app)
