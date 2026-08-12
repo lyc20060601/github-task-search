@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 import main
 from github_client import GitHubSearchError
+from repo_profile import RepoProfile
 from task_parser import TaskParserError, TaskSpec
 
 
@@ -195,5 +196,112 @@ def test_smart_search_returns_bad_gateway_when_github_search_fails(monkeypatch) 
 
 def test_smart_search_requires_query() -> None:
     response = client.post("/smart-search", json={})
+
+    assert response.status_code == 422
+
+
+def test_recommend_search_orchestrates_top_ten_and_returns_recommendations(
+    monkeypatch,
+) -> None:
+    task_spec = TaskSpec(task="semantic segmentation", framework=["PyTorch"])
+    queries = ["semantic segmentation pytorch"]
+    repositories = [
+        {
+            "full_name": f"owner/repo-{index}",
+            "html_url": f"https://github.com/owner/repo-{index}",
+            "description": f"Repository {index}",
+            "stars": index,
+            "language": "Python",
+            "updated_at": "2026-08-11T00:00:00Z",
+        }
+        for index in range(12)
+    ]
+    analyses = [
+        {
+            "full_name": repository["full_name"],
+            "profile": RepoProfile(full_name=repository["full_name"]),
+            "error": None,
+        }
+        for repository in repositories[:9]
+    ] + [
+        {
+            "full_name": repositories[9]["full_name"],
+            "profile": None,
+            "error": "analysis failed",
+        }
+    ]
+    recommendations = [
+        {
+            "rank": 1,
+            "full_name": "owner/repo-0",
+            "final_score": 90,
+        }
+    ]
+    calls = []
+
+    monkeypatch.setattr(main, "parse_task", lambda query: task_spec)
+    monkeypatch.setattr(main, "generate_queries", lambda spec: queries)
+    monkeypatch.setattr(main, "search_multiple_queries", lambda values: repositories)
+
+    def fake_analyze(candidates, received_spec):
+        calls.append(("analyze", candidates, received_spec))
+        return analyses
+
+    def fake_rank(received_spec, candidates, received_analyses):
+        calls.append(("rank", received_spec, candidates, received_analyses))
+        return recommendations
+
+    monkeypatch.setattr(main, "analyze_repositories", fake_analyze)
+    monkeypatch.setattr(main, "rank_repositories", fake_rank)
+
+    response = client.post("/recommend-search", json={"query": "find a project"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "task_spec": task_spec.model_dump(),
+        "generated_queries": queries,
+        "candidate_count": 12,
+        "analyzed_count": 9,
+        "recommendations": recommendations,
+    }
+    assert calls[0] == ("analyze", repositories[:10], task_spec)
+    assert calls[1] == ("rank", task_spec, repositories[:10], analyses)
+
+
+def test_recommend_search_allows_all_repository_analyses_to_fail(monkeypatch):
+    task_spec = TaskSpec(task="semantic segmentation")
+    repositories = [{"full_name": "owner/repo"}]
+    analyses = [
+        {"full_name": "owner/repo", "profile": None, "error": "README unavailable"}
+    ]
+
+    monkeypatch.setattr(main, "parse_task", lambda query: task_spec)
+    monkeypatch.setattr(main, "generate_queries", lambda spec: ["segmentation"])
+    monkeypatch.setattr(main, "search_multiple_queries", lambda queries: repositories)
+    monkeypatch.setattr(main, "analyze_repositories", lambda candidates, spec: analyses)
+    monkeypatch.setattr(main, "rank_repositories", lambda spec, candidates, values: [])
+
+    response = client.post("/recommend-search", json={"query": "find a project"})
+
+    assert response.status_code == 200
+    assert response.json()["candidate_count"] == 1
+    assert response.json()["analyzed_count"] == 0
+    assert response.json()["recommendations"] == []
+
+
+def test_recommend_search_returns_bad_gateway_for_pipeline_failure(monkeypatch):
+    def failing_parse(query):
+        raise TaskParserError("LLM task parsing request failed")
+
+    monkeypatch.setattr(main, "parse_task", failing_parse)
+
+    response = client.post("/recommend-search", json={"query": "find a project"})
+
+    assert response.status_code == 502
+    assert response.json() == {"detail": "LLM task parsing request failed"}
+
+
+def test_recommend_search_requires_query() -> None:
+    response = client.post("/recommend-search", json={})
 
     assert response.status_code == 422

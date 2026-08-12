@@ -28,7 +28,8 @@ test("the homepage submits the query and renders search results", async () => {
     source,
     /process\.env\.NEXT_PUBLIC_API_BASE_URL \?\?/,
   );
-  assert.match(source, /fetch\(`\$\{apiBaseUrl\}\/smart-search`/);
+  assert.match(source, /"\/smart-search"/);
+  assert.match(source, /fetch\(`\$\{apiBaseUrl\}\$\{endpoint\}`/);
   assert.doesNotMatch(
     source,
     /fetch\("http:\/\/127\.0\.0\.1:8000\/smart-search"/,
@@ -76,7 +77,7 @@ test("the homepage shows loading and empty result states", async () => {
   const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
 
   assert.match(source, /disabled=\{isLoading\}/);
-  assert.match(source, /isLoading \? "正在搜索 GitHub\.\.\."/);
+  assert.match(source, /"正在搜索 GitHub\.\.\."/);
   assert.match(source, /setIsLoading\(false\)/);
   assert.match(source, /未找到相关 GitHub 项目/);
 });
@@ -89,4 +90,31 @@ test("the homepage shows a safe error and logs diagnostic details", async () => 
   assert.match(source, /catch \(caughtError\)/);
   assert.match(source, /console\.error\("Search request failed:", caughtError\)/);
   assert.match(source, /setError\("搜索失败，请稍后重试。"\)/);
+});
+
+test("the homepage supports deep recommendations and renders the Top 5 details", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /type RecommendSearchResponse =/);
+  assert.match(source, /"recommend"/);
+  assert.match(source, /深度推荐/);
+  assert.match(source, /\/recommend-search/);
+  assert.match(source, /responseData\.recommendations/);
+  assert.match(source, /正在分析 GitHub 项目，/);
+  assert.match(source, /这可能需要一些时间……/);
+  assert.match(source, /recommendation\.rank/);
+  assert.match(source, /recommendation\.full_name/);
+  assert.match(source, /recommendation\.final_score/);
+  assert.match(source, /recommendation\.description/);
+  assert.match(source, /recommendation\.stars/);
+  assert.match(source, /recommendation\.language/);
+  assert.match(source, /score_breakdown\.task_match/);
+  assert.match(source, /score_breakdown\.completeness/);
+  assert.match(source, /score_breakdown\.must_have/);
+  assert.match(source, /score_breakdown\.maintenance/);
+  assert.match(source, /score_breakdown\.documentation/);
+  assert.match(source, /recommendation\.strengths/);
+  assert.match(source, /recommendation\.weaknesses/);
+  assert.match(source, /recommendation\.evidence/);
+  assert.match(source, /href=\{recommendation\.html_url\}/);
 });

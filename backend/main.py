@@ -6,12 +6,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+from batch_analyzer import analyze_repositories
 from github_client import (
     GitHubSearchError,
     search_multiple_queries,
     search_repositories,
 )
 from query_planner import generate_queries
+from ranking.final_ranking import rank_repositories
 from task_parser import TaskParserError, parse_task
 
 
@@ -73,6 +75,34 @@ def register_routes(api: FastAPI) -> None:
             "task_spec": task_spec.model_dump(),
             "generated_queries": generated_queries,
             "repositories": repositories,
+        }
+
+    @api.post("/recommend-search")
+    def recommend_repository_search(request: SearchRequest) -> dict[str, Any]:
+        try:
+            task_spec = parse_task(request.query)
+            generated_queries = generate_queries(task_spec)
+            repositories = search_multiple_queries(generated_queries)
+        except (TaskParserError, GitHubSearchError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        candidates = repositories[:10]
+        analysis_results = analyze_repositories(candidates, task_spec)
+        analyzed_count = sum(
+            result.get("profile") is not None and result.get("error") is None
+            for result in analysis_results
+        )
+        recommendations = rank_repositories(
+            task_spec,
+            candidates,
+            analysis_results,
+        )
+        return {
+            "task_spec": task_spec.model_dump(),
+            "generated_queries": generated_queries,
+            "candidate_count": len(repositories),
+            "analyzed_count": analyzed_count,
+            "recommendations": recommendations,
         }
 
 
