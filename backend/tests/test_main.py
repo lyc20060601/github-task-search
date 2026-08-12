@@ -15,6 +15,13 @@ def test_root_returns_api_message() -> None:
     assert response.json() == {"message": "GitHub Task Search API"}
 
 
+def test_vercel_backend_prefix_returns_api_message() -> None:
+    response = client.get("/api/backend/")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "GitHub Task Search API"}
+
+
 def test_search_returns_github_repositories(monkeypatch) -> None:
     repositories = [
         {

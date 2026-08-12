@@ -36,6 +36,9 @@ def get_allowed_origins() -> list[str]:
 
 app = FastAPI()
 
+# Vercel's multi-service rewrite forwards the service prefix to FastAPI.
+vercel_api = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
@@ -45,34 +48,38 @@ app.add_middleware(
 )
 
 
+def register_routes(api: FastAPI) -> None:
+    @api.get("/")
+    def root() -> dict[str, str]:
+        return {"message": "GitHub Task Search API"}
+
+    @api.post("/search")
+    def repository_search(request: SearchRequest) -> list[dict[str, Any]]:
+        try:
+            return search_repositories(request.query)
+        except GitHubSearchError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    @api.post("/smart-search")
+    def smart_repository_search(request: SearchRequest) -> dict[str, Any]:
+        try:
+            task_spec = parse_task(request.query)
+            generated_queries = generate_queries(task_spec)
+            repositories = search_multiple_queries(generated_queries)
+        except (TaskParserError, GitHubSearchError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        return {
+            "task_spec": task_spec.model_dump(),
+            "generated_queries": generated_queries,
+            "repositories": repositories,
+        }
+
+
 class SearchRequest(BaseModel):
     query: str
 
 
-@app.get("/")
-def read_root() -> dict[str, str]:
-    return {"message": "GitHub Task Search API"}
-
-
-@app.post("/search")
-def search(request: SearchRequest) -> list[dict[str, Any]]:
-    try:
-        return search_repositories(request.query)
-    except GitHubSearchError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-
-@app.post("/smart-search")
-def smart_search(request: SearchRequest) -> dict[str, Any]:
-    try:
-        task_spec = parse_task(request.query)
-        generated_queries = generate_queries(task_spec)
-        repositories = search_multiple_queries(generated_queries)
-    except (TaskParserError, GitHubSearchError) as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    return {
-        "task_spec": task_spec.model_dump(),
-        "generated_queries": generated_queries,
-        "repositories": repositories,
-    }
+register_routes(app)
+register_routes(vercel_api)
+app.mount("/api/backend", vercel_api)

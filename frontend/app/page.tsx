@@ -30,7 +30,8 @@ type SmartSearchResponse = {
 
 const placeholder = "描述你想寻找的 GitHub 项目，例如：找一个适合无人机语义分割的项目";
 const apiBaseUrl = (
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000"
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.VERCEL ? "/api/backend" : "http://127.0.0.1:8000")
 ).replace(/\/+$/, "");
 
 function formatValues(values: string[]) {

@@ -26,7 +26,7 @@ test("the homepage submits the query and renders search results", async () => {
   assert.match(source, /^"use client";/);
   assert.match(
     source,
-    /process\.env\.NEXT_PUBLIC_API_BASE_URL \?\? "http:\/\/127\.0\.0\.1:8000"/,
+    /process\.env\.NEXT_PUBLIC_API_BASE_URL \?\?/,
   );
   assert.match(source, /fetch\(`\$\{apiBaseUrl\}\/smart-search`/);
   assert.doesNotMatch(
@@ -48,6 +48,12 @@ test("the homepage submits the query and renders search results", async () => {
   assert.match(source, /target="_blank"/);
   assert.match(source, />查看 GitHub<\/a>/);
   assert.doesNotMatch(source, /project\.score/);
+});
+
+test("the homepage uses the Vercel same-origin backend fallback", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /process\.env\.VERCEL \? "\/api\/backend"/);
 });
 
 test("the homepage renders AI understanding and generated queries", async () => {
