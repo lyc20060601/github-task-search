@@ -4,6 +4,7 @@ import main
 from github_client import GitHubSearchError
 from repo_profile import RepoProfile
 from task_parser import TaskParserError, TaskSpec
+from runtime_report import RuntimeReport
 
 
 client = TestClient(main.app)
@@ -305,3 +306,43 @@ def test_recommend_search_requires_query() -> None:
     response = client.post("/recommend-search", json={})
 
     assert response.status_code == 422
+
+
+def test_validate_repository_is_an_independent_user_triggered_endpoint(monkeypatch):
+    received = []
+    report = RuntimeReport(
+        full_name="owner/repository",
+        clone_status="success",
+        runtime_score=10,
+        runtime_breakdown={"clone": 10},
+        runtime_status="unknown",
+    )
+
+    def fake_validate(full_name):
+        received.append(full_name)
+        return report
+
+    monkeypatch.setattr(main, "validate_repository", fake_validate)
+
+    response = client.post(
+        "/validate-repository", json={"full_name": "owner/repository"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == report.model_dump()
+    assert received == ["owner/repository"]
+
+
+def test_validate_repository_requires_full_name():
+    response = client.post("/validate-repository", json={})
+
+    assert response.status_code == 422
+
+
+def test_validate_repository_declares_runtime_report_response_model():
+    schema = client.get("/openapi.json").json()
+
+    response_schema = schema["paths"]["/validate-repository"]["post"]["responses"][
+        "200"
+    ]["content"]["application/json"]["schema"]
+    assert response_schema["$ref"] == "#/components/schemas/RuntimeReport"
