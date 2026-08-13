@@ -74,6 +74,7 @@ h1 {
 
 .mode-button:focus-visible,
 .search-button:focus-visible,
+.validate-button:focus-visible,
 .github-link:focus-visible {
   outline: 3px solid #bfdbfe;
   outline-offset: 3px;
@@ -513,6 +514,147 @@ progress::-moz-progress-bar {
   overflow-wrap: anywhere;
 }
 
+.runtime-validation {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #d8dee7;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.runtime-validation.loading {
+  justify-items: start;
+  min-height: 76px;
+  color: #475569;
+}
+
+.runtime-validation.loading strong {
+  color: #172033;
+}
+
+.runtime-validation.failed {
+  border-color: #f0c7c3;
+  color: #8f1d18;
+  background: #fff7f6;
+}
+
+.runtime-validation.failed p {
+  margin: 0;
+}
+
+.runtime-validation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.runtime-validation-heading h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.runtime-score {
+  color: #0f766e;
+  font-size: 1rem;
+}
+
+.runtime-stage-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.runtime-stage-list div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #e2e7ed;
+  border-radius: 4px;
+  background: #ffffff;
+}
+
+.runtime-stage-list dt {
+  color: #596273;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.runtime-stage-list dd {
+  margin: 0;
+}
+
+.runtime-stage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.runtime-stage.success {
+  color: #067647;
+}
+
+.runtime-stage.failed {
+  color: #b42318;
+}
+
+.runtime-stage.unknown,
+.runtime-stage.skipped {
+  color: #687386;
+}
+
+.runtime-errors {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e7ed;
+  color: #8f1d18;
+}
+
+.runtime-errors ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.runtime-errors li {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.recommendation-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.validate-button {
+  min-height: 40px;
+  padding: 9px 16px;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  color: #1d4ed8;
+  background: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.validate-button:hover:not(:disabled) {
+  color: #ffffff;
+  background: #2563eb;
+}
+
+.validate-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 @media (max-width: 800px) {
   main {
     padding: 32px 18px 64px;
@@ -536,12 +678,36 @@ progress::-moz-progress-bar {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .runtime-stage-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .evidence-row {
     grid-template-columns: 110px minmax(0, 1fr);
   }
 
   .evidence-row span {
     grid-column: 1 / -1;
+  }
+
+  .runtime-validation-heading,
+  .recommendation-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .runtime-stage-list {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-score {
+    font-size: 0.95rem;
+  }
+
+  .validate-button,
+  .recommendation-actions .github-link {
+    width: 100%;
+    text-align: center;
   }
 }
 
