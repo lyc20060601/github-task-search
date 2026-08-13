@@ -68,11 +68,34 @@ type RecommendSearchResponse = {
   recommendations: Recommendation[];
 };
 
+type RuntimeStatus = "success" | "failed" | "unknown" | "skipped";
+
+type RuntimeReport = {
+  full_name: string;
+  clone_status: RuntimeStatus;
+  environment_detected: RuntimeStatus;
+  dependency_install_status: RuntimeStatus;
+  entrypoint_detected: RuntimeStatus;
+  smoke_test_status: RuntimeStatus;
+  runtime_score: number | null;
+  runtime_breakdown: Record<string, number>;
+  runtime_status: RuntimeStatus;
+  errors: string[];
+  warnings: string[];
+};
+
+type ValidationState =
+  | { status: "loading" }
+  | { status: "complete"; report: RuntimeReport }
+  | { status: "error"; message: string };
+
 const placeholder = "描述你想寻找的 GitHub 项目，例如：找一个适合无人机语义分割的项目";
 const apiBaseUrl = (
   process.env.NEXT_PUBLIC_API_BASE_URL ??
   (process.env.VERCEL ? "/api/backend" : "http://127.0.0.1:8000")
 ).replace(/\/+$/, "");
+const MAX_VISIBLE_ERRORS = 3;
+const MAX_ERROR_LENGTH = 240;
 
 const evidenceLabels: Record<string, string> = {
   has_training_code: "训练代码",
@@ -106,6 +129,100 @@ function ScoreItem({
   );
 }
 
+const runtimeStages: Array<{
+  key: keyof Pick<
+    RuntimeReport,
+    | "clone_status"
+    | "environment_detected"
+    | "entrypoint_detected"
+    | "dependency_install_status"
+    | "smoke_test_status"
+  >;
+  label: string;
+}> = [
+  { key: "clone_status", label: "Clone" },
+  { key: "environment_detected", label: "环境识别" },
+  { key: "entrypoint_detected", label: "运行入口" },
+  { key: "dependency_install_status", label: "依赖安装" },
+  { key: "smoke_test_status", label: "Smoke Test" },
+];
+
+const runtimeStatusDisplay: Record<RuntimeStatus, { symbol: string; label: string }> = {
+  success: { symbol: "✅", label: "成功" },
+  failed: { symbol: "❌", label: "失败" },
+  unknown: { symbol: "?", label: "未知" },
+  skipped: { symbol: "−", label: "已跳过" },
+};
+
+function truncateError(message: string) {
+  const normalized = message.trim();
+  return normalized.length > MAX_ERROR_LENGTH
+    ? `${normalized.slice(0, MAX_ERROR_LENGTH)}…`
+    : normalized;
+}
+
+function RuntimeValidationPanel({ state }: { state: ValidationState }) {
+  if (state.status === "loading") {
+    return (
+      <section className="runtime-validation loading" role="status" aria-live="polite">
+        <strong>正在创建隔离环境并验证项目，</strong>
+        <span>这个过程可能需要几分钟……</span>
+      </section>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <section className="runtime-validation failed" role="alert">
+        <strong>可运行性验证失败</strong>
+        <p>{state.message}</p>
+      </section>
+    );
+  }
+
+  const { report } = state;
+  const visibleErrors = report.errors
+    .filter(Boolean)
+    .slice(0, MAX_VISIBLE_ERRORS)
+    .map(truncateError);
+
+  return (
+    <section className="runtime-validation complete" aria-label="可运行性验证结果">
+      <div className="runtime-validation-heading">
+        <h4>可运行性验证</h4>
+        <strong className="runtime-score">
+          Runtime Score：{Math.round(report.runtime_score ?? 0)}/100
+        </strong>
+      </div>
+      <dl className="runtime-stage-list">
+        {runtimeStages.map((stage) => {
+          const status = report[stage.key];
+          const display = runtimeStatusDisplay[status];
+          return (
+            <div key={stage.key}>
+              <dt>{stage.label}</dt>
+              <dd className={`runtime-stage ${status}`}>
+                <span aria-hidden="true">{display.symbol}</span>
+                <span>{display.label}</span>
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      {visibleErrors.length > 0 && (
+        <div className="runtime-errors" role="alert">
+          <strong>主要失败原因</strong>
+          <ul>
+            {visibleErrors.map((message, index) => (
+              <li key={`${index}-${message}`}>{message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("smart");
@@ -117,6 +234,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState("");
+  const [validations, setValidations] = useState<Record<string, ValidationState>>({});
 
   function selectMode(mode: SearchMode) {
     setSearchMode(mode);
@@ -127,6 +245,7 @@ export default function Home() {
     setSearchStats({ candidates: 0, analyzed: 0 });
     setHasSearched(false);
     setError("");
+    setValidations({});
   }
 
   async function handleSearch() {
@@ -138,6 +257,7 @@ export default function Home() {
     setTaskSpec(null);
     setGeneratedQueries([]);
     setSearchStats({ candidates: 0, analyzed: 0 });
+    setValidations({});
 
     try {
       const endpoint = searchMode === "recommend" ? "/recommend-search" : "/smart-search";
@@ -184,7 +304,47 @@ export default function Home() {
     }
   }
 
+  async function handleValidateRepository(fullName: string) {
+    setValidations((current) => ({
+      ...current,
+      [fullName]: { status: "loading" },
+    }));
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/validate-repository`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: fullName }),
+      });
+
+      if (!response.ok) {
+        const errorDetails = await response.text();
+        throw new Error(
+          `Validation request failed (${response.status}): ${errorDetails || response.statusText}`,
+        );
+      }
+
+      const report = (await response.json()) as RuntimeReport;
+      setValidations((current) => ({
+        ...current,
+        [fullName]: { status: "complete", report },
+      }));
+    } catch (caughtError) {
+      console.error("Repository validation failed:", caughtError);
+      setValidations((current) => ({
+        ...current,
+        [fullName]: {
+          status: "error",
+          message: "验证失败，请稍后重试。",
+        },
+      }));
+    }
+  }
+
   const resultCount = searchMode === "recommend" ? recommendations.length : projects.length;
+  const isAnyValidationLoading = Object.values(validations).some(
+    (validation) => validation.status === "loading",
+  );
 
   return (
     <main>
@@ -343,7 +503,9 @@ export default function Home() {
             </div>
 
             <div className="recommendation-list">
-              {recommendations.map((recommendation) => (
+              {recommendations.map((recommendation) => {
+                const validation = validations[recommendation.full_name];
+                return (
                 <article className="recommendation-card" key={recommendation.full_name}>
                   <header className="recommendation-header">
                     <div className="rank" aria-label={`排名 ${recommendation.rank}`}>
@@ -413,14 +575,27 @@ export default function Home() {
                     </div>
                   </section>
 
-                  <a
-                    className="github-link"
-                    href={recommendation.html_url}
-                    target="_blank"
-                    rel="noreferrer"
-                  >查看 GitHub</a>
+                  {validation && <RuntimeValidationPanel state={validation} />}
+
+                  <div className="recommendation-actions">
+                    <button
+                      className="validate-button"
+                      type="button"
+                      onClick={() => handleValidateRepository(recommendation.full_name)}
+                      disabled={isAnyValidationLoading}
+                    >
+                      {validation?.status === "loading" ? "验证中…" : "验证可运行性"}
+                    </button>
+                    <a
+                      className="github-link"
+                      href={recommendation.html_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >查看 GitHub</a>
+                  </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
