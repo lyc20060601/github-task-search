@@ -6,6 +6,9 @@ BACKEND_ROOT="$PROJECT_ROOT/backend"
 PYTHON="$BACKEND_ROOT/.venv/bin/python"
 RUNTIME_ROOT="$PROJECT_ROOT/.runtime"
 PID_FILE="$RUNTIME_ROOT/validation-worker.pid"
+SANDBOX_IMAGE="github-task-search-sandbox:latest"
+SANDBOX_DOCKERFILE="backend/runtime/Dockerfile.sandbox"
+SANDBOX_CONTEXT="backend/runtime"
 worker_pid=""
 compose_started=0
 cd "$PROJECT_ROOT"
@@ -79,6 +82,7 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 
+docker build --file "$SANDBOX_DOCKERFILE" --tag "$SANDBOX_IMAGE" "$SANDBOX_CONTEXT"
 worker_token=$("$PYTHON" -c "import secrets; print(secrets.token_urlsafe(32))")
 VALIDATION_MODE=worker
 VALIDATION_WORKER_TOKEN=$worker_token

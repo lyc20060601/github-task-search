@@ -33,7 +33,11 @@ def test_installs_requirements_inside_networked_sandbox() -> None:
     command = run.call_args.args[1]
     assert command[-2:] == ["-r", "requirements.txt"]
     assert "--target" in command
-    assert "/tmp/dependencies" in command
+    assert "/opt/dependencies" in command
+    dependency_directory = workspace / ".runtime-dependencies"
+    assert dependency_directory.is_dir()
+    assert run.call_args.kwargs["dependency_directory"] == dependency_directory
+    assert run.call_args.kwargs["dependency_directory_read_only"] is False
     assert run.call_args.kwargs["network_enabled"] is True
     assert run.call_args.kwargs["limits"].timeout_seconds == 300
 
