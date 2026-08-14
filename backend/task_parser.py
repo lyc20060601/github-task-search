@@ -33,6 +33,7 @@ Example JSON output:
   "preferences": ["high accuracy"]
 }
 """
+MIN_DETAILED_QUERY_LENGTH = 20
 
 
 class TaskParserError(RuntimeError):
@@ -62,7 +63,7 @@ def _is_suspiciously_incomplete(user_query: str, spec: TaskSpec) -> bool:
         )
     )
     return (
-        len(user_query.strip()) >= 20
+        len(user_query.strip()) >= MIN_DETAILED_QUERY_LENGTH
         and (spec.task is None or not spec.task.strip())
         and extracted_items <= 1
     )
