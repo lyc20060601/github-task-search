@@ -1,9 +1,17 @@
 from fastapi.testclient import TestClient
+import pytest
 
 import main
 from github_client import GitHubSearchError
 from repo_profile import RepoProfile
 from task_parser import TaskParserError, TaskSpec
+from runtime.validation_jobs import (
+    InvalidValidationJob,
+    ValidationBusy,
+    ValidationJob,
+    ValidationTimedOut,
+    ValidationUnavailable,
+)
 from runtime_report import RuntimeReport
 
 
@@ -322,7 +330,7 @@ def test_validate_repository_is_an_independent_user_triggered_endpoint(monkeypat
         received.append(full_name)
         return report
 
-    monkeypatch.setattr(main, "validate_repository", fake_validate)
+    monkeypatch.setattr(main, "validate_requested_repository", fake_validate)
 
     response = client.post(
         "/validate-repository", json={"full_name": "owner/repository"}
@@ -346,3 +354,169 @@ def test_validate_repository_declares_runtime_report_response_model():
         "200"
     ]["content"]["application/json"]["schema"]
     assert response_schema["$ref"] == "#/components/schemas/RuntimeReport"
+
+
+def test_validate_repository_rejects_arbitrary_url():
+    response = client.post(
+        "/validate-repository",
+        json={"full_name": "https://github.com/owner/repository"},
+    )
+    assert response.status_code == 422
+
+
+def test_validation_status_is_non_sensitive(monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "get_validation_status",
+        lambda: {"mode": "worker", "worker_ready": True},
+    )
+    response = client.get("/validation-status")
+    assert response.status_code == 200
+    assert response.json() == {"mode": "worker", "worker_ready": True}
+
+
+def test_internal_worker_poll_requires_authentication(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+    response = client.post("/internal/validation/jobs/next")
+    assert response.status_code == 401
+
+
+def test_internal_worker_poll_returns_job(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+    touched = []
+    monkeypatch.setattr(main.COORDINATOR, "touch_worker", lambda: touched.append(True))
+    monkeypatch.setattr(
+        main.COORDINATOR,
+        "claim_next",
+        lambda wait_seconds: ValidationJob(id="job-1", full_name="owner/repository"),
+    )
+    response = client.post(
+        "/internal/validation/jobs/next",
+        headers={"Authorization": "Bearer worker-token"},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"id": "job-1", "full_name": "owner/repository"}
+    assert touched == [True]
+
+
+def test_internal_worker_idle_poll_returns_no_content(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(main.COORDINATOR, "touch_worker", lambda: None)
+    monkeypatch.setattr(
+        main.COORDINATOR,
+        "claim_next",
+        lambda wait_seconds: None,
+    )
+    response = client.post(
+        "/internal/validation/jobs/next",
+        headers={"Authorization": "Bearer worker-token"},
+    )
+    assert response.status_code == 204
+    assert response.content == b""
+
+
+def test_internal_worker_accepts_matching_result(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+    completed = []
+    monkeypatch.setattr(
+        main.COORDINATOR,
+        "complete",
+        lambda job_id, report: completed.append((job_id, report.full_name)),
+    )
+    response = client.post(
+        "/internal/validation/jobs/job-1/result",
+        headers={"Authorization": "Bearer worker-token"},
+        json={"report": RuntimeReport(full_name="owner/repository").model_dump()},
+    )
+    assert response.status_code == 204
+    assert completed == [("job-1", "owner/repository")]
+
+
+def test_internal_worker_result_rejects_extra_report_fields(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+    report = RuntimeReport(full_name="owner/repository").model_dump()
+    report["command"] = "whoami"
+    response = client.post(
+        "/internal/validation/jobs/job-1/result",
+        headers={"Authorization": "Bearer worker-token"},
+        json={"report": report},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"Authorization": "Bearer wrong-token"},
+    ],
+)
+def test_internal_worker_result_authenticates_before_parsing_malformed_body(
+    monkeypatch,
+    headers,
+):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+
+    response = client.post(
+        "/internal/validation/jobs/job-1/result",
+        headers=headers,
+        content=b"not-json",
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "invalid worker credentials"}
+
+
+def test_internal_worker_result_rejects_oversized_body(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+    oversized_body = b'{"report":"' + (b"x" * (256 * 1024)) + b'"}'
+
+    response = client.post(
+        "/internal/validation/jobs/job-1/result",
+        headers={"Authorization": "Bearer worker-token"},
+        content=oversized_body,
+    )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "validation result body is too large"}
+
+
+def test_internal_worker_result_rejects_stale_job(monkeypatch):
+    monkeypatch.setenv("VALIDATION_WORKER_TOKEN", "worker-token")
+
+    def reject(job_id, report):
+        raise InvalidValidationJob("unknown or expired validation job")
+
+    monkeypatch.setattr(main.COORDINATOR, "complete", reject)
+    response = client.post(
+        "/internal/validation/jobs/stale/result",
+        headers={"Authorization": "Bearer worker-token"},
+        json={"report": RuntimeReport(full_name="owner/repository").model_dump()},
+    )
+    assert response.status_code == 409
+
+
+def test_internal_worker_routes_are_hidden_from_openapi():
+    paths = client.get("/openapi.json").json()["paths"]
+    assert "/internal/validation/jobs/next" not in paths
+    assert "/internal/validation/jobs/{job_id}/result" not in paths
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        (ValidationBusy("busy"), 429),
+        (ValidationUnavailable("unavailable"), 503),
+        (ValidationTimedOut("timed out"), 504),
+    ],
+)
+def test_validate_repository_maps_worker_failures(monkeypatch, error, status_code):
+    def fail(full_name):
+        raise error
+
+    monkeypatch.setattr(main, "validate_requested_repository", fail)
+    response = client.post(
+        "/validate-repository",
+        json={"full_name": "owner/repository"},
+    )
+    assert response.status_code == status_code

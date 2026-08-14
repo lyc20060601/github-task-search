@@ -1,0 +1,46 @@
+# Secrets and local configuration
+.env
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Version control and editor metadata
+.git
+.gitignore
+.github
+.idea
+.vscode
+
+# JavaScript build artifacts
+**/node_modules
+**/.next
+**/out
+**/npm-debug.log*
+**/pnpm-debug.log*
+
+# Python environments and caches
+**/.venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+**/*.py[cod]
+
+# Tests, temporary workspaces, and logs
+**/.test-temp
+**/*-temp
+**/*-temp-*
+**/runtime/.tmp
+**/*.log
+
+# OS metadata and project documentation not needed in images
+.DS_Store
+Thumbs.db
+docs

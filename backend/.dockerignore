@@ -1,0 +1,32 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python environments, caches, and test output
+.venv
+venv
+__pycache__
+**/__pycache__
+.pytest_cache
+**/.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+*.py[cod]
+*-temp
+*-temp-*
+.test-temp
+runtime/.tmp
+
+# Local tooling and logs
+.git
+.idea
+.vscode
+*.log
+tests

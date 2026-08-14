@@ -1,10 +1,10 @@
 import os
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from batch_analyzer import analyze_repositories
 from github_client import (
@@ -14,7 +14,20 @@ from github_client import (
 )
 from query_planner import generate_queries
 from ranking.final_ranking import rank_repositories
-from runtime.validator import validate_repository
+from runtime.validation_gateway import (
+    COORDINATOR,
+    get_validation_status,
+    require_worker_token,
+    validate_requested_repository,
+)
+from runtime.validation_jobs import (
+    InvalidValidationJob,
+    ValidationBusy,
+    ValidationJob,
+    ValidationJobResult,
+    ValidationTimedOut,
+    ValidationUnavailable,
+)
 from runtime_report import RuntimeReport
 from task_parser import TaskParserError, parse_task
 
@@ -29,6 +42,7 @@ LOCAL_FRONTEND_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
 ]
+MAX_VALIDATION_RESULT_BYTES = 256 * 1024
 
 
 def get_allowed_origins() -> list[str]:
@@ -111,15 +125,96 @@ def register_routes(api: FastAPI) -> None:
     def validate_public_repository(
         request: ValidateRepositoryRequest,
     ) -> RuntimeReport:
-        return validate_repository(request.full_name)
+        try:
+            return validate_requested_repository(request.full_name)
+        except ValidationBusy as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from exc
+        except ValidationUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except ValidationTimedOut as exc:
+            raise HTTPException(status_code=504, detail=str(exc)) from exc
+
+    @api.get("/validation-status")
+    def validation_status() -> dict[str, str | bool]:
+        return get_validation_status()
+
+    @api.post(
+        "/internal/validation/jobs/next",
+        include_in_schema=False,
+        response_model=ValidationJob | None,
+    )
+    def next_validation_job(
+        response: Response,
+        authorization: str | None = Header(default=None),
+    ) -> ValidationJob | None:
+        try:
+            require_worker_token(authorization)
+        except PermissionError as exc:
+            raise HTTPException(status_code=401, detail="invalid worker credentials") from exc
+        COORDINATOR.touch_worker()
+        job = COORDINATOR.claim_next(wait_seconds=10)
+        if job is None:
+            response.status_code = status.HTTP_204_NO_CONTENT
+        return job
+
+    @api.post(
+        "/internal/validation/jobs/{job_id}/result",
+        include_in_schema=False,
+        status_code=status.HTTP_204_NO_CONTENT,
+    )
+    async def submit_validation_result(
+        job_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> Response:
+        try:
+            require_worker_token(authorization)
+        except PermissionError as exc:
+            raise HTTPException(status_code=401, detail="invalid worker credentials") from exc
+
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_VALIDATION_RESULT_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail="validation result body is too large",
+                    )
+            except ValueError:
+                pass
+
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > MAX_VALIDATION_RESULT_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail="validation result body is too large",
+                )
+
+        try:
+            result = ValidationJobResult.model_validate_json(body)
+        except (ValidationError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="invalid validation result",
+            ) from exc
+
+        try:
+            COORDINATOR.complete(job_id, result.report)
+        except InvalidValidationJob as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class SearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     query: str
 
 
 class ValidateRepositoryRequest(BaseModel):
-    full_name: str
+    model_config = ConfigDict(extra="forbid")
+    full_name: str = Field(pattern=r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 register_routes(app)
