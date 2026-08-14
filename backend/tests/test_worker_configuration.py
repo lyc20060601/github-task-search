@@ -64,12 +64,34 @@ def test_start_scripts_generate_ephemeral_tokens_without_printing_them() -> None
         assert not re.search(r"(?:echo|write-(?:host|output))[^\n]*worker_token", lowered)
 
 
+def test_start_scripts_build_the_local_sandbox_image_before_compose() -> None:
+    powershell = _read("scripts/start.ps1")
+    shell = _read("scripts/start.sh")
+    image = "github-task-search-sandbox:latest"
+    dockerfile = "backend/runtime/Dockerfile.sandbox"
+
+    for script in (powershell, shell):
+        assert image in script
+        assert dockerfile in script
+
+    powershell_build = powershell.index('"build",')
+    shell_build = shell.index('docker build --file "$SANDBOX_DOCKERFILE"')
+    assert powershell_build < powershell.index('Invoke-DockerCommand -Arguments @("compose", "up"')
+    assert shell_build < shell.index("docker compose up --build --detach")
+    assert powershell_build < powershell.index("$workerToken = [Convert]::ToBase64String")
+    assert shell_build < shell.index('worker_token=$("$PYTHON"')
+
+
 def test_stop_scripts_only_terminate_the_recorded_numeric_pid() -> None:
     powershell = _read("scripts/stop.ps1")
     shell = _read("scripts/stop.sh")
 
     assert "TryParse" in powershell
     assert "Stop-Process -Id $workerPid" in powershell
+    assert "$belongsToProject = $false" in powershell
+    assert "$pidFileCanBeRemoved = $false" in powershell
+    assert "Validation worker did not stop; its PID file was retained." in powershell
+    assert "if ($pidFileCanBeRemoved)" in powershell
     assert "docker compose down" in powershell
     assert "pkill" not in powershell.lower()
     assert "killall" not in powershell.lower()

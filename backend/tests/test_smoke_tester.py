@@ -14,6 +14,8 @@ def _workspace(name: str) -> Path:
 def test_entrypoint_help_runs_in_disconnected_sandbox() -> None:
     workspace = _workspace("smoke-entrypoint-test")
     (workspace / "train.py").write_text("raise RuntimeError('must only run in Docker')", encoding="utf-8")
+    dependency_directory = workspace / ".runtime-dependencies"
+    dependency_directory.mkdir(exist_ok=True)
 
     with (
         patch("runtime.smoke_tester.run_in_sandbox") as run,
@@ -26,7 +28,16 @@ def test_entrypoint_help_runs_in_disconnected_sandbox() -> None:
     assert result.exit_code == 0
     assert result.test_duration == 1.25
     assert result.error is None
-    assert run.call_args.args[1] == ["python", "-B", "train.py", "--help"]
+    assert run.call_args.args[1] == [
+        "env",
+        "PYTHONPATH=/opt/dependencies",
+        "python",
+        "-B",
+        "train.py",
+        "--help",
+    ]
+    assert run.call_args.kwargs["dependency_directory"] == dependency_directory
+    assert run.call_args.kwargs["dependency_directory_read_only"] is True
     assert run.call_args.kwargs["network_enabled"] is False
     assert run.call_args.kwargs["limits"].timeout_seconds == 20
 

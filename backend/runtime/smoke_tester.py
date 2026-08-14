@@ -7,7 +7,13 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from time import perf_counter
 
-from .docker_sandbox import PROJECT_TEMP_ROOT, SandboxLimits, run_in_sandbox
+from .docker_sandbox import (
+    DEPENDENCY_DIRECTORY_NAME,
+    PROJECT_TEMP_ROOT,
+    SANDBOX_DEPENDENCY_TARGET,
+    SandboxLimits,
+    run_in_sandbox,
+)
 from .entrypoint_detector import COMMON_ENTRYPOINTS, detect_entrypoint
 
 
@@ -53,12 +59,20 @@ def run_smoke_test(
             error=validation_error,
         )
 
+    dependency_directory = path / DEPENDENCY_DIRECTORY_NAME
+    if dependency_directory.is_dir():
+        command = ["env", f"PYTHONPATH={SANDBOX_DEPENDENCY_TARGET}", *command]
+    else:
+        dependency_directory = None
+
     started = perf_counter()
     result = run_in_sandbox(
         path,
         command,
         limits=SandboxLimits(timeout_seconds=timeout_seconds),
         network_enabled=False,
+        dependency_directory=dependency_directory,
+        dependency_directory_read_only=True,
     )
     duration = round(perf_counter() - started, 3)
     stderr = _bounded_text(result.stderr, max_stderr_chars)

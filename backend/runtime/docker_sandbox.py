@@ -17,6 +17,8 @@ from uuid import uuid4
 PROJECT_TEMP_ROOT = Path(__file__).resolve().parent / ".tmp"
 SANDBOX_IMAGE = "github-task-search-sandbox:latest"
 SANDBOX_USER = "10001:10001"
+DEPENDENCY_DIRECTORY_NAME = ".runtime-dependencies"
+SANDBOX_DEPENDENCY_TARGET = "/opt/dependencies"
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ def build_docker_command(
     container_name: str | None = None,
     image: str = SANDBOX_IMAGE,
     network_enabled: bool = False,
+    dependency_directory: str | Path | None = None,
+    dependency_directory_read_only: bool = True,
 ) -> list[str]:
     """Build a deny-by-default Docker command without running it."""
     active_limits = limits or SandboxLimits()
@@ -106,6 +110,21 @@ def build_docker_command(
         f"--tmpfs=/tmp:rw,noexec,nosuid,nodev,size={active_limits.tmpfs_size}",
         f"--mount=type=bind,source={workspace_path},target=/workspace,readonly",
     ]
+    if dependency_directory is not None:
+        dependency_path = Path(dependency_directory).resolve()
+        if not dependency_path.is_dir():
+            raise ValueError("dependency_directory must be an existing directory")
+        try:
+            dependency_path.relative_to(workspace_path)
+        except ValueError as exc:
+            raise ValueError("dependency_directory must be inside the repository workspace") from exc
+        dependency_mount = (
+            f"--mount=type=bind,source={dependency_path},"
+            f"target={SANDBOX_DEPENDENCY_TARGET}"
+        )
+        if dependency_directory_read_only:
+            dependency_mount += ",readonly"
+        docker_command.append(dependency_mount)
     if container_name:
         docker_command.append(f"--name={container_name}")
     docker_command.extend([image, *command])
@@ -120,6 +139,8 @@ def run_in_sandbox(
     container_name: str | None = None,
     image: str = SANDBOX_IMAGE,
     network_enabled: bool = False,
+    dependency_directory: str | Path | None = None,
+    dependency_directory_read_only: bool = True,
 ) -> SandboxResult:
     """Run a caller-provided command under the restricted Docker contract."""
     active_limits = limits or SandboxLimits()
@@ -131,6 +152,8 @@ def run_in_sandbox(
         container_name=active_container_name,
         image=image,
         network_enabled=network_enabled,
+        dependency_directory=dependency_directory,
+        dependency_directory_read_only=dependency_directory_read_only,
     )
     clean_env = {"PATH": os.environ.get("PATH", "")}
     try:

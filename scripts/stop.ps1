@@ -8,25 +8,41 @@ $pidFile = Join-Path $projectRoot ".runtime\validation-worker.pid"
 $workerError = $null
 Set-Location -LiteralPath $projectRoot
 
+function Test-WorkerProcessOwnership {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$WorkerPid
+    )
+
+    $metadata = Get-CimInstance Win32_Process -Filter "ProcessId = $WorkerPid" -ErrorAction SilentlyContinue
+    if (
+        $null -eq $metadata -or
+        [string]::IsNullOrWhiteSpace($metadata.CommandLine) -or
+        [string]::IsNullOrWhiteSpace($metadata.ExecutablePath)
+    ) {
+        return $false
+    }
+
+    return (
+        $metadata.CommandLine.Contains("runtime.validation_worker") -and
+        [System.IO.Path]::GetFullPath($metadata.ExecutablePath) -eq $pythonPath
+    )
+}
+
 try {
     if (Test-Path -LiteralPath $pidFile -PathType Leaf) {
+        $pidFileCanBeRemoved = $false
         $pidText = (Get-Content -LiteralPath $pidFile -Raw).Trim()
         $workerPid = 0
         if (-not [int]::TryParse($pidText, [ref]$workerPid) -or $workerPid -le 0) {
-            $workerError = "Ignoring invalid validation worker PID file."
+            $workerError = "Invalid validation worker PID file; it was retained."
         } else {
             $process = Get-Process -Id $workerPid -ErrorAction SilentlyContinue
-            if ($null -ne $process) {
-                $metadata = Get-CimInstance Win32_Process -Filter "ProcessId = $workerPid" -ErrorAction SilentlyContinue
-                $belongsToProject = $true
-                if ($null -ne $metadata -and -not [string]::IsNullOrWhiteSpace($metadata.CommandLine)) {
-                    $belongsToProject = $metadata.CommandLine.Contains("runtime.validation_worker")
-                    if (-not [string]::IsNullOrWhiteSpace($metadata.ExecutablePath)) {
-                        $belongsToProject = $belongsToProject -and (
-                            [System.IO.Path]::GetFullPath($metadata.ExecutablePath) -eq $pythonPath
-                        )
-                    }
-                }
+            if ($null -eq $process) {
+                $pidFileCanBeRemoved = $true
+            } else {
+                $belongsToProject = $false
+                $belongsToProject = Test-WorkerProcessOwnership -WorkerPid $workerPid
                 if ($belongsToProject) {
                     Stop-Process -Id $workerPid
                     for ($attempt = 0; $attempt -lt 20; $attempt++) {
@@ -35,12 +51,36 @@ try {
                         }
                         Start-Sleep -Milliseconds 500
                     }
+
+                    if (Get-Process -Id $workerPid -ErrorAction SilentlyContinue) {
+                        if (Test-WorkerProcessOwnership -WorkerPid $workerPid) {
+                            Stop-Process -Id $workerPid -Force
+                            for ($attempt = 0; $attempt -lt 10; $attempt++) {
+                                if (-not (Get-Process -Id $workerPid -ErrorAction SilentlyContinue)) {
+                                    break
+                                }
+                                Start-Sleep -Milliseconds 500
+                            }
+                        } else {
+                            $workerError = "Validation worker PID changed ownership during shutdown; it was not force-stopped."
+                        }
+                    }
+
+                    if (Get-Process -Id $workerPid -ErrorAction SilentlyContinue) {
+                        if ($null -eq $workerError) {
+                            $workerError = "Validation worker did not stop; its PID file was retained."
+                        }
+                    } else {
+                        $pidFileCanBeRemoved = $true
+                    }
                 } else {
-                    $workerError = "Recorded PID does not belong to this project's validation worker; it was not stopped."
+                    $workerError = "Recorded PID does not belong to this project's validation worker; it was not stopped and its PID file was retained."
                 }
             }
         }
-        Remove-Item -LiteralPath $pidFile -Force
+        if ($pidFileCanBeRemoved) {
+            Remove-Item -LiteralPath $pidFile -Force
+        }
     }
 } finally {
     $previousPreference = $ErrorActionPreference
