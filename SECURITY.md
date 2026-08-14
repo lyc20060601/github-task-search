@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-Please report security issues privately to the project maintainer before opening a public issue. Include a short description, affected component, reproduction steps that do not contain secrets, and the potential impact.
+Please report security issues through [GitHub private vulnerability reporting](https://github.com/lyc20060601/github-task-search/security/advisories/new) instead of opening a public issue. Include a short description, affected component, reproduction steps that do not contain secrets, and the potential impact.
 
 Do not send:
 
