@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -20,6 +21,14 @@ from .docker_sandbox import (
 DEFAULT_INSTALL_TIMEOUT_SECONDS = 600
 DEFAULT_MAX_LOG_CHARS = 20_000
 INSTALL_TARGET = SANDBOX_DEPENDENCY_TARGET
+PYPROJECT_COPY_TARGET = "/tmp/project"
+_COPY_AND_INSTALL_SCRIPT = (
+    "import shutil, subprocess, sys; "
+    f"source={PYPROJECT_COPY_TARGET!r}; "
+    "shutil.copytree('/workspace', source, symlinks=True, "
+    "ignore=shutil.ignore_patterns('.runtime-dependencies')); "
+    "raise SystemExit(subprocess.call([sys.executable, '-m', 'pip', *sys.argv[1:]]))"
+)
 
 
 @dataclass(frozen=True)
@@ -59,7 +68,8 @@ def install_dependencies(
                 install_duration=0.0,
                 install_error=error,
             )
-        install_command = _pip_base_command() + ["--use-pep517", "."]
+        pip_arguments = _pip_base_command()[3:] + ["--use-pep517", PYPROJECT_COPY_TARGET]
+        install_command = ["python", "-c", _COPY_AND_INSTALL_SCRIPT, *pip_arguments]
     else:
         return DependencyInstallResult(
             dependency_install_status="skipped",
@@ -72,7 +82,20 @@ def install_dependencies(
         tmpfs_size="1g",
     )
     dependency_directory = path / DEPENDENCY_DIRECTORY_NAME
-    dependency_directory.mkdir(exist_ok=True)
+    if os.path.lexists(dependency_directory):
+        return DependencyInstallResult(
+            dependency_install_status="failed",
+            install_duration=0.0,
+            install_error="Repository contains reserved dependency output path",
+        )
+    try:
+        dependency_directory.mkdir()
+    except FileExistsError:
+        return DependencyInstallResult(
+            dependency_install_status="failed",
+            install_duration=0.0,
+            install_error="Repository contains reserved dependency output path",
+        )
     started = perf_counter()
     sandbox_result = run_in_sandbox(
         path,

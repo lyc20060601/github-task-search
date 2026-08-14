@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 from pathlib import Path
 
 from runtime_report import RuntimeReport
@@ -37,7 +39,36 @@ def _append_diagnostic(
 def _remove_clone(repository_path: Path) -> None:
     resolved_path = repository_path.resolve()
     resolved_path.relative_to(PROJECT_TEMP_ROOT.resolve())
-    shutil.rmtree(resolved_path)
+    try:
+        shutil.rmtree(resolved_path)
+    except PermissionError:
+        if not os.path.lexists(resolved_path):
+            return
+        _make_clone_tree_writable(resolved_path)
+        shutil.rmtree(resolved_path)
+
+
+def _make_clone_tree_writable(repository_path: Path) -> None:
+    os.chmod(repository_path, stat.S_IRWXU)
+    for current, directory_names, file_names in os.walk(
+        repository_path,
+        topdown=True,
+        followlinks=False,
+    ):
+        current_path = Path(current)
+        for name in directory_names:
+            child = current_path / name
+            if not _is_link_or_junction(child):
+                os.chmod(child, stat.S_IRWXU)
+        for name in file_names:
+            child = current_path / name
+            if not _is_link_or_junction(child):
+                os.chmod(child, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def _is_link_or_junction(path: Path) -> bool:
+    is_junction = getattr(os.path, "isjunction", lambda _: False)
+    return path.is_symlink() or is_junction(path)
 
 
 def _score_report(report: RuntimeReport) -> RuntimeReport:

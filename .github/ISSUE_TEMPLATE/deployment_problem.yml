@@ -1,0 +1,54 @@
+name: Self-hosting problem
+description: Ask for help with local Docker, startup, or runtime validation.
+title: "[Deployment]: "
+labels: [deployment]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This project is supported for local or trusted-LAN self-hosting. Never
+        attach `.env`, API keys, tokens, authorization headers, or private data.
+  - type: textarea
+    id: stage
+    attributes:
+      label: Failing stage
+      description: State whether clone, setup, Compose startup, search, recommendation, or runtime validation failed.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and version
+      placeholder: Windows 11 24H2
+    validations:
+      required: true
+  - type: input
+    id: docker
+    attributes:
+      label: Docker version
+      placeholder: Output of docker --version
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: Output of py -3.12 --version or python3 --version
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and redacted error
+      description: Include the exact command and only the shortest useful, sanitized error.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checks completed
+      options:
+        - label: Docker Engine was running when the failure occurred.
+        - label: I used my own credentials and did not include them here.
+          required: true
+        - label: I checked the README troubleshooting section.
