@@ -63,7 +63,7 @@ def _is_suspiciously_incomplete(user_query: str, spec: TaskSpec) -> bool:
     )
     return (
         len(user_query.strip()) >= 20
-        and spec.task is None
+        and (spec.task is None or not spec.task.strip())
         and extracted_items <= 1
     )
 

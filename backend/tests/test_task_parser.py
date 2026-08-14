@@ -142,6 +142,37 @@ def test_parse_task_repairs_a_suspiciously_incomplete_result(monkeypatch) -> Non
     assert json.dumps(incomplete) in repair_instruction
 
 
+def test_parse_task_repairs_whitespace_task_for_long_sparse_query(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LLM_API_KEY", "test-api-key")
+    monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.com")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    query = "Find a PyTorch project for image classification."
+    incomplete = {
+        "task": "   ",
+        "domain": [],
+        "framework": ["PyTorch"],
+        "hardware": [],
+        "must_have": [],
+        "preferences": [],
+    }
+    repaired = {**incomplete, "task": "image classification"}
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return completion_response(incomplete if attempts == 1 else repaired)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = parse_task(query, client=client)
+
+    assert result.model_dump() == repaired
+    assert attempts == 2
+
+
 def test_parse_task_fails_after_one_incomplete_repair(monkeypatch) -> None:
     monkeypatch.setenv("LLM_API_KEY", "test-api-key")
     monkeypatch.setenv("LLM_BASE_URL", "https://llm.example.com")
