@@ -1,12 +1,15 @@
+import os
+import stat
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, call, patch
 
 from runtime.dependency_installer import DependencyInstallResult
 from runtime.entrypoint_detector import EntrypointDetection
 from runtime.environment_detector import EnvironmentDetection
 from runtime.repo_cloner import CloneResult
 from runtime.smoke_tester import SmokeTestResult
-from runtime.validator import validate_repository
+from runtime.validator import _make_clone_tree_writable, _remove_clone, validate_repository
+from runtime.docker_sandbox import PROJECT_TEMP_ROOT
 
 
 def test_validate_repository_runs_pipeline_and_removes_clone(monkeypatch, tmp_path):
@@ -133,4 +136,57 @@ def test_stage_failure_is_recorded_and_later_safe_stages_continue(
         "Environment detection failed: cannot read files",
         "Dependency installation failed: pip failed",
         "Smoke test failed: import failed",
+    ]
+
+
+def test_remove_clone_handles_read_only_git_files() -> None:
+    repository_path = PROJECT_TEMP_ROOT / "validator-read-only-cleanup-test"
+    git_objects = repository_path / ".git" / "objects" / "pack"
+    git_objects.mkdir(parents=True, exist_ok=True)
+    read_only_file = git_objects / "pack-test.idx"
+    read_only_file.write_bytes(b"index")
+    os.chmod(read_only_file, stat.S_IREAD)
+
+    try:
+        _remove_clone(repository_path)
+        assert not repository_path.exists()
+    finally:
+        if read_only_file.exists():
+            os.chmod(read_only_file, stat.S_IWRITE)
+
+
+def test_cleanup_retries_after_restoring_tree_permissions() -> None:
+    repository_path = PROJECT_TEMP_ROOT / "validator-permission-retry-test"
+    repository_path.mkdir(parents=True, exist_ok=True)
+
+    with (
+        patch(
+            "runtime.validator.shutil.rmtree",
+            side_effect=[PermissionError("denied"), None],
+        ) as rmtree,
+        patch("runtime.validator._make_clone_tree_writable") as make_writable,
+    ):
+        _remove_clone(repository_path)
+
+    make_writable.assert_called_once_with(repository_path.resolve())
+    assert rmtree.call_count == 2
+
+
+def test_make_clone_tree_writable_restores_directory_and_file_modes() -> None:
+    repository_path = PROJECT_TEMP_ROOT / "validator-mode-repair-test"
+    child_directory = repository_path / "locked"
+    child_file = repository_path / "locked.txt"
+
+    with (
+        patch("runtime.validator.os.walk", return_value=[
+            (str(repository_path), [child_directory.name], [child_file.name])
+        ]),
+        patch("runtime.validator.os.chmod") as chmod,
+    ):
+        _make_clone_tree_writable(repository_path)
+
+    assert chmod.call_args_list == [
+        call(repository_path, stat.S_IRWXU),
+        call(child_directory, stat.S_IRWXU),
+        call(child_file, stat.S_IRUSR | stat.S_IWUSR),
     ]

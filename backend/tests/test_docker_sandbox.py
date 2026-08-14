@@ -162,3 +162,17 @@ def test_run_assigns_a_container_name_when_caller_omits_one() -> None:
 
     name_argument = next(part for part in result.command if part.startswith("--name="))
     assert name_argument.startswith("--name=github-task-sandbox-")
+
+
+def test_docker_output_is_decoded_as_utf8_without_crashing() -> None:
+    workspace = _workspace("sandbox-utf8-output-test")
+
+    with patch("runtime.docker_sandbox.subprocess.run") as run:
+        run.return_value.returncode = 1
+        run.return_value.stdout = ""
+        run.return_value.stderr = "依赖安装失败"
+        result = run_in_sandbox(workspace, ["python", "--version"])
+
+    assert result.error == "依赖安装失败"
+    assert run.call_args.kwargs["encoding"] == "utf-8"
+    assert run.call_args.kwargs["errors"] == "replace"
