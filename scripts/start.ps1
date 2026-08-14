@@ -9,6 +9,9 @@ $backendRoot = Join-Path $projectRoot "backend"
 $pythonPath = Join-Path $backendRoot ".venv\Scripts\python.exe"
 $runtimeRoot = Join-Path $projectRoot ".runtime"
 $pidFile = Join-Path $runtimeRoot "validation-worker.pid"
+$sandboxImage = "github-task-search-sandbox:latest"
+$sandboxDockerfile = "backend/runtime/Dockerfile.sandbox"
+$sandboxContext = "backend/runtime"
 $workerProcess = $null
 $composeStarted = $false
 $workerToken = $null
@@ -110,6 +113,13 @@ try {
         }
         Remove-Item -LiteralPath $pidFile -Force
     }
+
+    Invoke-DockerCommand -Arguments @(
+        "build",
+        "--file", $sandboxDockerfile,
+        "--tag", $sandboxImage,
+        $sandboxContext
+    )
 
     $tokenBytes = New-Object byte[] 32
     $randomNumberGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()

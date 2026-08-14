@@ -56,6 +56,52 @@ def test_docker_command_only_mounts_workspace_read_only() -> None:
     assert "LLM_API_KEY" not in combined
 
 
+def test_dependency_directory_can_be_mounted_read_only_inside_sandbox() -> None:
+    workspace = _workspace("sandbox-dependency-mount-test")
+    dependency_directory = workspace / ".runtime-dependencies"
+    dependency_directory.mkdir(exist_ok=True)
+
+    command = build_docker_command(
+        workspace,
+        ["python", "--version"],
+        dependency_directory=dependency_directory,
+        dependency_directory_read_only=True,
+    )
+
+    assert any(
+        f"source={dependency_directory.resolve()},target=/opt/dependencies,readonly" in part
+        for part in command
+    )
+
+
+def test_dependency_directory_write_mount_remains_scoped_to_workspace() -> None:
+    workspace = _workspace("sandbox-dependency-write-test")
+    dependency_directory = workspace / ".runtime-dependencies"
+    dependency_directory.mkdir(exist_ok=True)
+
+    command = build_docker_command(
+        workspace,
+        ["python", "--version"],
+        dependency_directory=dependency_directory,
+        dependency_directory_read_only=False,
+    )
+    mount = next(part for part in command if "target=/opt/dependencies" in part)
+
+    assert "readonly" not in mount
+
+
+def test_rejects_dependency_directory_outside_repository_workspace() -> None:
+    workspace = _workspace("sandbox-dependency-scope-test")
+    outside = _workspace("sandbox-dependency-outside-test")
+
+    with pytest.raises(ValueError, match="inside the repository workspace"):
+        build_docker_command(
+            workspace,
+            ["python", "--version"],
+            dependency_directory=outside,
+        )
+
+
 def test_rejects_mounts_outside_project_temp_directory(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="project runtime temporary directory"):
         build_docker_command(tmp_path, ["python", "--version"])

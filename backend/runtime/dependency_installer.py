@@ -8,12 +8,18 @@ from pathlib import Path
 from time import perf_counter
 from typing import Iterable
 
-from .docker_sandbox import PROJECT_TEMP_ROOT, SandboxLimits, run_in_sandbox
+from .docker_sandbox import (
+    DEPENDENCY_DIRECTORY_NAME,
+    PROJECT_TEMP_ROOT,
+    SANDBOX_DEPENDENCY_TARGET,
+    SandboxLimits,
+    run_in_sandbox,
+)
 
 
 DEFAULT_INSTALL_TIMEOUT_SECONDS = 600
 DEFAULT_MAX_LOG_CHARS = 20_000
-INSTALL_TARGET = "/tmp/dependencies"
+INSTALL_TARGET = SANDBOX_DEPENDENCY_TARGET
 
 
 @dataclass(frozen=True)
@@ -65,12 +71,16 @@ def install_dependencies(
         timeout_seconds=timeout_seconds,
         tmpfs_size="1g",
     )
+    dependency_directory = path / DEPENDENCY_DIRECTORY_NAME
+    dependency_directory.mkdir(exist_ok=True)
     started = perf_counter()
     sandbox_result = run_in_sandbox(
         path,
         install_command,
         limits=limits,
         network_enabled=True,
+        dependency_directory=dependency_directory,
+        dependency_directory_read_only=False,
     )
     duration = round(perf_counter() - started, 3)
     stdout = _bounded_log(sandbox_result.stdout, max_log_chars)
