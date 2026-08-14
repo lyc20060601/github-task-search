@@ -19,7 +19,9 @@ Runtime validation is never started automatically for search results. It runs on
 ## Requirements
 
 - Docker Desktop with a running Docker Engine on Windows or macOS, or Docker Engine on Linux
-- Python 3.12 on the host when repository runtime validation is needed
+- Python 3.12 on the host when repository runtime validation is needed. On
+  Windows, install the official Python Launcher and open a new PowerShell
+  window after installation.
 - GitHub account and a GitHub token for GitHub API access
 - DeepSeek-compatible API key for task parsing and repository analysis
 - At least 4 GB RAM available to Docker; more may be needed for repository validation
@@ -36,7 +38,7 @@ From the directory containing this README:
 ```powershell
 Copy-Item .env.example .env
 notepad .env
-python -m venv .\backend\.venv
+py -3.12 -m venv .\backend\.venv
 .\backend\.venv\Scripts\python.exe -m pip install -r .\backend\requirements.txt
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
