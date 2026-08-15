@@ -4,6 +4,11 @@ GitHub Task Search is a self-hosted tool for finding GitHub repositories from na
 
 The project is designed to run on the user's own computer. It does not require a cloud server.
 
+> **Release status:** This repository is preparing its first public `v0.1.0`
+> self-hosted release. The API and local deployment flow are usable, but the
+> project should still be treated as an early release. See [CHANGELOG.md](CHANGELOG.md)
+> for the current release contents.
+
 ## Features
 
 - Natural-language GitHub repository search
@@ -15,6 +20,17 @@ The project is designed to run on the user's own computer. It does not require a
 - Optional, user-triggered repository runtime validation in a restricted Docker Sandbox
 
 Runtime validation is never started automatically for search results. It runs only after the user explicitly selects a repository. It is a bounded smoke test, not a guarantee that a project will train successfully.
+
+## Supported Deployment Model
+
+The supported deployment is one trusted user running the application locally,
+or a small trusted LAN deployment protected by the host network. It is not a
+public multi-tenant code-execution service. Do not expose the Validation Worker
+or internal Worker endpoints to the internet.
+
+Search results, recommendation scores, compatibility checks, and smoke tests are
+decision support. They do not guarantee that a repository is secure, correct,
+reproducible, or able to complete training on the local machine.
 
 ## Requirements
 
@@ -28,6 +44,15 @@ Runtime validation is never started automatically for search results. It runs on
 - Internet access for image/dependency downloads and API requests
 
 The application itself does not require an NVIDIA GPU. A GPU/CUDA repository may still be reported as incompatible with the local machine.
+
+## Install From GitHub
+
+Clone the repository and enter its root directory:
+
+```sh
+git clone https://github.com/lyc20060601/github-task-search.git
+cd github-task-search
+```
 
 ## Quick Start
 
@@ -43,6 +68,12 @@ py -3.12 -m venv .\backend\.venv
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1
 ```
 
+You can check the prerequisites without starting containers or the Worker:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start.ps1 -ValidateOnly
+```
+
 ### Linux or macOS
 
 ```sh
@@ -52,6 +83,12 @@ python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
 chmod +x scripts/start.sh scripts/stop.sh
 ./scripts/start.sh
+```
+
+Prerequisite-only check:
+
+```sh
+./scripts/start.sh --validate-only
 ```
 
 Then open [http://localhost:3000](http://localhost:3000).
@@ -83,6 +120,10 @@ docker compose up --build
 Running `docker compose up` directly leaves runtime validation disabled. Use the
 project start script when the host Validation Worker is required.
 
+The start script builds the frontend/backend containers and starts a host-side
+Validation Worker. The Worker needs the host Python 3.12 virtual environment
+because the backend container intentionally does not receive the Docker socket.
+
 ## Configuration
 
 Copy `.env.example` to `.env` and fill in your own values:
@@ -100,6 +141,11 @@ VALIDATION_MODE=disabled
 Never commit `.env`. Never put real credentials in README files, Dockerfiles, frontend code, `NEXT_PUBLIC_*` variables, screenshots, or issue reports. `GITHUB_TOKEN` and `LLM_API_KEY` are passed only to the backend container. The frontend receives only the public backend URL.
 
 Use your own credentials. GitHub API limits and DeepSeek API charges are associated with the account that owns the credentials. DeepSeek API usage is billed by token usage; check the provider's current pricing before enabling analysis.
+
+For public repository search, use the minimum GitHub token permissions needed by
+your account. Fine-grained tokens should be limited to public repository read
+access. If a credential was ever pasted into a public chat, screenshot, issue,
+commit, or log, revoke it and create another one before using this project.
 
 ## Service Layout
 
@@ -139,6 +185,10 @@ Check that `GITHUB_TOKEN` is valid and has access to public repository search. C
 docker compose logs --tail 100 backend
 ```
 
+If the log reports a connection timeout to `github.com:443` or
+`api.github.com:443`, verify that the host and Docker Desktop can reach GitHub.
+This is a network/proxy/firewall problem rather than a search-ranking failure.
+
 ### AI parsing fails
 
 Check `LLM_API_KEY`, `LLM_BASE_URL`, and `LLM_MODEL`. Do not paste the key into an issue or terminal screenshot. API quotas, provider outages, network restrictions, or invalid model names can cause this failure.
@@ -163,7 +213,7 @@ Backend tests:
 
 ```sh
 cd backend
-python -m pytest
+python -m pytest -q -p no:cacheprovider
 ```
 
 Frontend checks:
@@ -174,7 +224,18 @@ pnpm test
 pnpm build
 ```
 
+Release metadata checks:
+
+```sh
+docker compose --env-file .env.example config --quiet
+sh -n scripts/start.sh scripts/stop.sh
+git diff --check
+```
+
 Docker is the supported reproducible path for end-to-end local startup.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request and
+[docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) before creating a release.
 
 ## Security
 

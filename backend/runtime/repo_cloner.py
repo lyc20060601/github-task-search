@@ -6,6 +6,7 @@ from the cloned repository and never executes README content.
 
 from __future__ import annotations
 
+import platform
 import re
 import shutil
 import subprocess
@@ -58,16 +59,17 @@ def clone_repository(
     _PROJECT_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
     target = _PROJECT_TEMP_ROOT / f"{owner}-{repository}-{uuid4().hex}"
 
-    command = [
-        "git",
-        "-c",
-        "credential.helper=",
-        "clone",
-        "--depth",
-        "1",
-        clone_url,
-        str(target),
-    ]
+    command = ["git", "-c", "credential.helper="]
+    if platform.system() == "Windows":
+        command.extend(
+            [
+                "-c",
+                "http.sslBackend=schannel",
+                "-c",
+                "http.version=HTTP/1.1",
+            ]
+        )
+    command.extend(["clone", "--depth", "1", clone_url, str(target)])
 
     try:
         completed = subprocess.run(

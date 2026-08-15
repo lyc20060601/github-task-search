@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,7 @@ from runtime.docker_sandbox import PROJECT_TEMP_ROOT, SandboxResult
 
 def _workspace(name: str) -> Path:
     path = PROJECT_TEMP_ROOT / name
+    shutil.rmtree(path, ignore_errors=True)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -42,7 +44,7 @@ def test_installs_requirements_inside_networked_sandbox() -> None:
     assert run.call_args.kwargs["limits"].timeout_seconds == 300
 
 
-def test_installs_pep621_pyproject_with_standard_pip_command() -> None:
+def test_installs_pep621_pyproject_from_an_ephemeral_writable_copy() -> None:
     workspace = _workspace("dependency-pyproject-test")
     (workspace / "pyproject.toml").write_text(
         '[build-system]\nrequires=["setuptools"]\nbuild-backend="setuptools.build_meta"\n'
@@ -56,8 +58,27 @@ def test_installs_pep621_pyproject_with_standard_pip_command() -> None:
 
     assert result.dependency_install_status == "success"
     command = run.call_args.args[1]
-    assert command[-1] == "."
+    assert command[:2] == ["python", "-c"]
+    assert "copytree" in command[2]
+    assert "symlinks=True" in command[2]
+    assert "/workspace" in command[2]
+    assert "/tmp/project" in command[2]
     assert "--use-pep517" in command
+    assert command[-1] == "/tmp/project"
+
+
+def test_rejects_repository_controlled_dependency_output_path() -> None:
+    workspace = _workspace("dependency-reserved-path-test")
+    (workspace / "requirements.txt").write_text("requests\n", encoding="utf-8")
+    reserved_path = workspace / ".runtime-dependencies"
+    reserved_path.mkdir(exist_ok=True)
+
+    with patch("runtime.dependency_installer.run_in_sandbox") as run:
+        result = install_dependencies(workspace)
+
+    assert result.dependency_install_status == "failed"
+    assert result.install_error == "Repository contains reserved dependency output path"
+    run.assert_not_called()
 
 
 def test_skips_repository_without_supported_dependency_file() -> None:
