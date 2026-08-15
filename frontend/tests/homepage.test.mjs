@@ -45,10 +45,24 @@ test("the homepage submits the query and renders search results", async () => {
   assert.match(source, /project\.stars/);
   assert.match(source, /project\.language/);
   assert.match(source, /project\.updated_at/);
+  assert.match(source, /project\.preliminary_score/);
+  assert.match(source, /初步匹配分数/);
   assert.match(source, /href=\{project\.html_url\}/);
   assert.match(source, /target="_blank"/);
   assert.match(source, />查看 GitHub<\/a>/);
   assert.doesNotMatch(source, /project\.score/);
+});
+
+test("the homepage exposes the original direct GitHub search mode", async () => {
+  const source = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(source, /type SearchMode = "direct" \| "smart" \| "recommend"/);
+  assert.match(source, /直接搜索/);
+  assert.match(source, /searchMode === "direct"/);
+  assert.match(source, /\? "\/search"/);
+  assert.match(source, /as Project\[\]/);
+  assert.match(source, /setProjects\(responseData\)/);
+  assert.match(source, /GitHub 搜索结果/);
 });
 
 test("the homepage uses the Vercel same-origin backend fallback", async () => {
@@ -113,6 +127,15 @@ test("the homepage supports deep recommendations and renders the Top 5 details",
   assert.match(source, /score_breakdown\.must_have/);
   assert.match(source, /score_breakdown\.maintenance/);
   assert.match(source, /score_breakdown\.documentation/);
+  assert.match(source, /score_breakdown\.community/);
+  assert.match(source, /score_breakdown\.environment/);
+  assert.match(source, /recommendation\.repo_profile\?\.tasks/);
+  assert.match(source, /recommendation\.repo_profile\?\.domains/);
+  assert.match(source, /recommendation\.repo_profile\?\.framework/);
+  assert.match(source, /recommendation\.repo_profile\?\.has_training_code/);
+  assert.match(source, /recommendation\.repo_profile\?\.has_custom_dataset_support/);
+  assert.match(source, /recommendation\.repo_profile\?\.has_pretrained_weights/);
+  assert.match(source, /recommendation\.repo_profile\?\.hardware_notes/);
   assert.match(source, /recommendation\.strengths/);
   assert.match(source, /recommendation\.weaknesses/);
   assert.match(source, /recommendation\.evidence/);

@@ -47,7 +47,7 @@ h1 {
 
 .mode-switch {
   display: grid;
-  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  grid-template-columns: repeat(3, minmax(112px, 1fr));
   gap: 3px;
   padding: 3px;
   border: 1px solid #d7dce3;
@@ -387,6 +387,7 @@ textarea:focus {
 }
 
 .score-section,
+.profile-section,
 .evidence-section {
   display: grid;
   gap: 12px;
@@ -403,8 +404,44 @@ textarea:focus {
 
 .score-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
   gap: 14px;
+}
+
+.profile-section {
+  display: grid;
+  gap: 12px;
+}
+
+.profile-section h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.profile-grid div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.profile-grid dt {
+  color: #6b7280;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.profile-grid dd {
+  margin: 0;
+  color: #344054;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .score-item {
@@ -670,12 +707,9 @@ progress::-moz-progress-bar {
   }
 
   .search-context,
-  .assessment-grid {
+  .assessment-grid,
+  .profile-grid {
     grid-template-columns: 1fr;
-  }
-
-  .score-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .runtime-stage-list {
@@ -720,9 +754,14 @@ progress::-moz-progress-bar {
     font-size: 1.65rem;
   }
 
+  .mode-switch {
+    grid-template-columns: 1fr;
+  }
+
   .task-spec,
   .result-meta,
-  .score-grid {
+  .score-grid,
+  .profile-grid {
     grid-template-columns: 1fr;
   }
 

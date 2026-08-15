@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type SearchMode = "smart" | "recommend";
+type SearchMode = "direct" | "smart" | "recommend";
 
 type Project = {
   name: string;
@@ -54,10 +54,23 @@ type Recommendation = {
   language: string | null;
   final_score: number;
   score_breakdown: ScoreBreakdown;
-  repo_profile: Record<string, unknown>;
+  repo_profile: RepoProfile | null;
   strengths: string[];
   weaknesses: string[];
   evidence: Record<string, Evidence>;
+};
+
+type RepoProfile = {
+  framework?: string | null;
+  tasks?: string[];
+  domains?: string[];
+  has_training_code?: boolean | null;
+  training_entry?: string | null;
+  has_custom_dataset_support?: boolean | null;
+  has_pretrained_weights?: boolean | null;
+  documentation_quality?: string | null;
+  hardware_notes?: string | null;
+  maintenance_notes?: string | null;
 };
 
 type RecommendSearchResponse = {
@@ -107,6 +120,15 @@ const evidenceLabels: Record<string, string> = {
 
 function formatValues(values: string[]) {
   return values.length > 0 ? values.join("、") : "未指定";
+}
+
+function formatProfileValue(value: string | null | undefined) {
+  return value?.trim() || "未知";
+}
+
+function formatProfileBoolean(value: boolean | null | undefined) {
+  if (typeof value !== "boolean") return "未知";
+  return value ? "是" : "否";
 }
 
 function ScoreItem({
@@ -260,7 +282,9 @@ export default function Home() {
     setValidations({});
 
     try {
-      const endpoint = searchMode === "recommend" ? "/recommend-search" : "/smart-search";
+      const endpoint = searchMode === "direct"
+        ? "/search"
+        : searchMode === "recommend" ? "/recommend-search" : "/smart-search";
       const response = await fetch(`${apiBaseUrl}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -274,7 +298,10 @@ export default function Home() {
         );
       }
 
-      if (searchMode === "recommend") {
+      if (searchMode === "direct") {
+        const responseData = (await response.json()) as Project[];
+        setProjects(responseData);
+      } else if (searchMode === "recommend") {
         const responseData = (await response.json()) as RecommendSearchResponse;
         setRecommendations(responseData.recommendations.slice(0, 5));
         setTaskSpec(responseData.task_spec);
@@ -353,6 +380,15 @@ export default function Home() {
           <h1>GitHub Task Search</h1>
           <div className="mode-switch" role="group" aria-label="搜索模式">
             <button
+              className={searchMode === "direct" ? "mode-button active" : "mode-button"}
+              type="button"
+              aria-pressed={searchMode === "direct"}
+              onClick={() => selectMode("direct")}
+              disabled={isLoading}
+            >
+              直接搜索
+            </button>
+            <button
               className={searchMode === "smart" ? "mode-button active" : "mode-button"}
               type="button"
               aria-pressed={searchMode === "smart"}
@@ -383,7 +419,7 @@ export default function Home() {
         <button className="search-button" type="button" onClick={handleSearch} disabled={isLoading}>
           {isLoading
             ? searchMode === "recommend" ? "分析中…" : "正在搜索 GitHub..."
-            : searchMode === "recommend" ? "深度推荐搜索" : "智能搜索"}
+            : searchMode === "recommend" ? "深度推荐搜索" : searchMode === "direct" ? "搜索 GitHub" : "智能搜索"}
         </button>
 
         {isLoading && (
@@ -448,9 +484,9 @@ export default function Home() {
           </p>
         )}
 
-        {projects.length > 0 && searchMode === "smart" && (
+        {projects.length > 0 && (searchMode === "smart" || searchMode === "direct") && (
           <section className="results" aria-label="搜索结果">
-            <h2>搜索结果</h2>
+            <h2>{searchMode === "direct" ? "GitHub 搜索结果" : "智能搜索结果"}</h2>
             <div className="result-list">
               {projects.map((project) => (
                 <article className="result-item" key={project.full_name}>
@@ -461,6 +497,12 @@ export default function Home() {
                     {project.description || "暂无项目描述"}
                   </p>
                   <dl className="result-meta">
+                    {project.preliminary_score !== undefined && (
+                      <div>
+                        <dt>初步匹配分数</dt>
+                        <dd>{project.preliminary_score}</dd>
+                      </div>
+                    )}
                     <div>
                       <dt>Stars</dt>
                       <dd>{project.stars.toLocaleString()}</dd>
@@ -540,7 +582,55 @@ export default function Home() {
                       <ScoreItem label="必须条件满足度" value={recommendation.score_breakdown.must_have} max={20} />
                       <ScoreItem label="维护情况" value={recommendation.score_breakdown.maintenance} max={10} />
                       <ScoreItem label="文档质量" value={recommendation.score_breakdown.documentation} max={10} />
+                      <ScoreItem label="社区指标" value={recommendation.score_breakdown.community} max={5} />
+                      <ScoreItem label="环境完整性" value={recommendation.score_breakdown.environment} max={5} />
                     </div>
+                  </section>
+
+                  <section className="profile-section" aria-label="项目分析摘要">
+                    <h4>项目分析</h4>
+                    <dl className="profile-grid">
+                      <div>
+                        <dt>任务</dt>
+                        <dd>{formatValues(recommendation.repo_profile?.tasks ?? [])}</dd>
+                      </div>
+                      <div>
+                        <dt>领域</dt>
+                        <dd>{formatValues(recommendation.repo_profile?.domains ?? [])}</dd>
+                      </div>
+                      <div>
+                        <dt>框架</dt>
+                        <dd>{formatProfileValue(recommendation.repo_profile?.framework)}</dd>
+                      </div>
+                      <div>
+                        <dt>训练代码</dt>
+                        <dd>{formatProfileBoolean(recommendation.repo_profile?.has_training_code)}</dd>
+                      </div>
+                      <div>
+                        <dt>训练入口</dt>
+                        <dd>{formatProfileValue(recommendation.repo_profile?.training_entry)}</dd>
+                      </div>
+                      <div>
+                        <dt>自定义数据集</dt>
+                        <dd>{formatProfileBoolean(recommendation.repo_profile?.has_custom_dataset_support)}</dd>
+                      </div>
+                      <div>
+                        <dt>预训练权重</dt>
+                        <dd>{formatProfileBoolean(recommendation.repo_profile?.has_pretrained_weights)}</dd>
+                      </div>
+                      <div>
+                        <dt>文档质量</dt>
+                        <dd>{formatProfileValue(recommendation.repo_profile?.documentation_quality)}</dd>
+                      </div>
+                      <div>
+                        <dt>硬件说明</dt>
+                        <dd>{formatProfileValue(recommendation.repo_profile?.hardware_notes)}</dd>
+                      </div>
+                      <div>
+                        <dt>维护说明</dt>
+                        <dd>{formatProfileValue(recommendation.repo_profile?.maintenance_notes)}</dd>
+                      </div>
+                    </dl>
                   </section>
 
                   <div className="assessment-grid">
